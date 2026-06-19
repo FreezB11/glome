@@ -274,11 +274,18 @@ int login_prompt(glome_login_config_t* config, pam_handle_t* pamh,
   UNUSED(pamh);
   UNUSED(error_tag);
 
-  // Disable bracketed paste. Special characters in the auth tag cause
-  // authentication to fail.
-  puts(BRACKETED_PASTE_FINISH);
+  if (message != NULL) {
+    // Disable bracketed paste. Special characters in the auth tag cause
+    // authentication to fail.
+    puts(BRACKETED_PASTE_FINISH);
+    puts(message);
+    fflush(NULL);
+  }
 
-  puts(message);
+  if(input == NULL){
+    return 0;
+  }
+
   fputs(PROMPT, stdout);
   fflush(NULL);
 
@@ -362,13 +369,149 @@ static char* create_login_message(glome_login_config_t* config,
   return glome_login_message(host_id_type, host_id, action);
 }
 
-int login_authenticate(glome_login_config_t* config, pam_handle_t* pamh,
-                       const char** error_tag) {
+/* leaving the old code in comment will remove it, after testing*/
+// int login_authenticate(glome_login_config_t* config, pam_handle_t* pamh,
+//                        const char** error_tag) {
+//   uint8_t public_key[PUBLIC_KEY_LENGTH] = {0};
+
+//   // Sanity check key material.
+
+//   if (is_zeroed(config->service_key, sizeof config->service_key)) {
+//     return failure(EXITCODE_PANIC, error_tag, "no-service-key");
+//   }
+
+//   if (derive_or_generate_key(config->secret_key, public_key)) {
+//     return failure(EXITCODE_PANIC, error_tag, "derive-or-generate-key");
+//   }
+
+//   // Derive content for the GLOME Login message.
+
+//   char* message = create_login_message(config, pamh, error_tag);
+//   if (!message) {
+//     return failure(EXITCODE_PANIC, error_tag, "glome-login-message");
+//   }
+
+//   // Prepare auth code for verification of response.
+
+//   uint8_t authcode[GLOME_MAX_TAG_LENGTH];
+//   if (glome_tag(/*verify=*/true, 0, config->secret_key, config->service_key,
+//                 (uint8_t*)message, strlen(message), authcode)) {
+//     free(message);
+//     return failure(EXITCODE_PANIC, error_tag, "get-authcode");
+//   }
+
+//   // Create the final prompt.
+
+//   char* prompt = NULL;
+//   {
+//     char* challenge = NULL;
+//     // TODO: Why does this not do a prefix?
+//     if (request_challenge(config->service_key, config->service_key_id,
+//                           public_key, message,
+//                           /*prefix_tag=*/NULL,
+//                           /*prefix_tag_len=*/0, &challenge, error_tag)) {
+//       free(message);
+//       return EXITCODE_PANIC;
+//     }
+
+//     free(message);
+//     message = NULL;
+
+//     const char* prompt_prefix = "";
+//     if (config->prompt != NULL) {
+//       prompt_prefix = config->prompt;
+//     }
+//     size_t prompt_len = strlen(prompt_prefix) + strlen(challenge) + 1;
+//     prompt = calloc(prompt_len, 1);
+//     if (prompt == NULL) {
+//       free(challenge);
+//       return failure(EXITCODE_PANIC, error_tag, "malloc-message");
+//     }
+//     stpcpy(stpcpy(prompt, prompt_prefix), challenge);
+//     free(challenge);
+//   }
+
+//   char input[ENCODED_BUFSIZE(GLOME_MAX_TAG_LENGTH)];
+//   int rc = login_prompt(config, pamh, error_tag, prompt, input, sizeof(input));
+//   free(prompt);
+//   message = NULL;
+
+//   if (rc != 0) {
+//     return rc;
+//   }
+
+//   int bytes_read = strlen(input);
+//   if (config->options & INSECURE) {
+//     login_syslog(config, pamh, LOG_DEBUG, "user input: %s", input);
+//   }
+
+//   // Calculate the correct authcode.
+//   char authcode_encoded[ENCODED_BUFSIZE(sizeof authcode)] = {0};
+//   if (base64url_encode(authcode, sizeof authcode, (uint8_t*)authcode_encoded,
+//                        sizeof authcode_encoded) == 0) {
+//     return failure(EXITCODE_PANIC, error_tag, "authcode-encode");
+//   }
+//   if (config->options & INSECURE) {
+//     login_syslog(config, pamh, LOG_DEBUG, "expect input: %s", authcode_encoded);
+//   }
+
+//   size_t min_len = MIN_ENCODED_AUTHCODE_LEN;
+//   if (config->min_authcode_len > min_len) {
+//     if (config->min_authcode_len > strlen(authcode_encoded)) {
+//       login_syslog(config, pamh, LOG_INFO,
+//                    "minimum authcode too long: %d bytes (%s)",
+//                    config->min_authcode_len, config->username);
+//       login_error(config, pamh,
+//                   "Minimum input too long: expected at most %d characters.\n",
+//                   config->min_authcode_len);
+//       return failure(EXITCODE_INVALID_INPUT_SIZE, error_tag, "authcode-length");
+//     }
+//     min_len = config->min_authcode_len;
+//   }
+//   if ((size_t)bytes_read < min_len) {
+//     login_syslog(config, pamh, LOG_INFO, "authcode too short: %d bytes (%s)",
+//                  bytes_read, config->username);
+//     login_error(config, pamh,
+//                 "Input too short: expected at least %d characters, got %d.\n",
+//                 min_len, bytes_read);
+//     return failure(EXITCODE_INVALID_INPUT_SIZE, error_tag, "authcode-length");
+//   }
+//   if ((size_t)bytes_read > strlen(authcode_encoded)) {
+//     login_syslog(config, pamh, LOG_INFO, "authcode too long: %d bytes (%s)",
+//                  bytes_read, config->username);
+//     login_error(config, pamh,
+//                 "Input too long: expected at most %zu characters, got %d.\n",
+//                 strlen(authcode_encoded), bytes_read);
+//     return failure(EXITCODE_INVALID_INPUT_SIZE, error_tag, "authcode-length");
+//   }
+
+//   // Since we use (relatively) short auth codes, sleep before confirming the
+//   // result to prevent bruteforcing.
+//   if (config->auth_delay_sec) {
+//     struct timespec delay;
+//     delay.tv_sec = (time_t)config->auth_delay_sec;
+//     delay.tv_nsec = 0;
+//     if (nanosleep(&delay, NULL) != 0) {
+//       login_error(config, pamh, "interrupted sleep: %s", strerror(errno));
+//       return failure(EXITCODE_INTERRUPTED, error_tag, "sleep-interrupted");
+//     }
+//   }
+
+//   if (CRYPTO_memcmp(input, authcode_encoded, bytes_read) != 0) {
+//     login_syslog(config, pamh, LOG_WARNING, "authcode rejected (%s)",
+//                  config->username);
+//     login_error(config, pamh, "Invalid authorization code.\n");
+//     return failure(EXITCODE_INVALID_AUTHCODE, error_tag, "authcode-invalid");
+//   }
+
+//   return 0;
+// }
+
+int login_issue_challenge(glome_login_config_t* config, pam_handle_t* pamh,
+                          const char** error_tag) {
   uint8_t public_key[PUBLIC_KEY_LENGTH] = {0};
 
-  // Sanity check key material.
-
-  if (is_zeroed(config->service_key, sizeof config->service_key)) {
+  if(is_zeroed(config->service_key, sizeof config->service_key)){
     return failure(EXITCODE_PANIC, error_tag, "no-service-key");
   }
 
@@ -376,58 +519,73 @@ int login_authenticate(glome_login_config_t* config, pam_handle_t* pamh,
     return failure(EXITCODE_PANIC, error_tag, "derive-or-generate-key");
   }
 
-  // Derive content for the GLOME Login message.
+  char* message = create_login_message(config, pamh, error_tag);
+  if (!message) {
+    return failure(EXITCODE_PANIC, error_tag, "glome-login-message");
+  }
+
+  char* challenge = NULL;
+  if (request_challenge(config->service_key, config->service_key_id,
+                        public_key, message,
+                        /*prefix_tag=*/NULL,
+                        /*prefix_tag_len=*/0, &challenge, error_tag)) {
+    free(message);
+    return EXITCODE_PANIC;
+  }
+  free(message);
+
+  const char* prompt_prefix = "";
+  if (config->prompt != NULL) {
+    prompt_prefix = config->prompt;
+  }
+  size_t prompt_len = strlen(prompt_prefix) + strlen(challenge) + 1;
+  char* prompt = calloc(prompt_len, 1);
+  if (prompt == NULL) {
+    free(challenge);
+    return failure(EXITCODE_PANIC, error_tag, "malloc-message");
+  }
+  stpcpy(stpcpy(prompt, prompt_prefix), challenge);
+  free(challenge);
+
+  // Print challenge only, do not read input yet.
+  int rc = login_prompt(config, pamh, error_tag, prompt, /*input=*/NULL, 0);
+  free(prompt);
+  return rc;
+}
+
+int login_check_response(glome_login_config_t* config, pam_handle_t* pamh,
+                         const char** error_tag) {
+  uint8_t public_key[PUBLIC_KEY_LENGTH] = {0};
+
+  // secret_key must already be set by the caller (restored from saved state
+  // or set via ephemeral-key config option).
+  if (is_zeroed(config->secret_key, sizeof config->secret_key)) {
+    return failure(EXITCODE_PANIC, error_tag, "no-secret-key");
+  }
+
+  // Derive public key from the already-set secret key.
+  if (derive_or_generate_key(config->secret_key, public_key)) {
+    return failure(EXITCODE_PANIC, error_tag, "derive-or-generate-key");
+  }
 
   char* message = create_login_message(config, pamh, error_tag);
   if (!message) {
     return failure(EXITCODE_PANIC, error_tag, "glome-login-message");
   }
 
-  // Prepare auth code for verification of response.
-
+  // Compute expected authcode.
   uint8_t authcode[GLOME_MAX_TAG_LENGTH];
   if (glome_tag(/*verify=*/true, 0, config->secret_key, config->service_key,
                 (uint8_t*)message, strlen(message), authcode)) {
     free(message);
     return failure(EXITCODE_PANIC, error_tag, "get-authcode");
   }
+  free(message);
 
-  // Create the final prompt.
-
-  char* prompt = NULL;
-  {
-    char* challenge = NULL;
-    // TODO: Why does this not do a prefix?
-    if (request_challenge(config->service_key, config->service_key_id,
-                          public_key, message,
-                          /*prefix_tag=*/NULL,
-                          /*prefix_tag_len=*/0, &challenge, error_tag)) {
-      free(message);
-      return EXITCODE_PANIC;
-    }
-
-    free(message);
-    message = NULL;
-
-    const char* prompt_prefix = "";
-    if (config->prompt != NULL) {
-      prompt_prefix = config->prompt;
-    }
-    size_t prompt_len = strlen(prompt_prefix) + strlen(challenge) + 1;
-    prompt = calloc(prompt_len, 1);
-    if (prompt == NULL) {
-      free(challenge);
-      return failure(EXITCODE_PANIC, error_tag, "malloc-message");
-    }
-    stpcpy(stpcpy(prompt, prompt_prefix), challenge);
-    free(challenge);
-  }
-
+  // Read input only, do not print challenge again.
   char input[ENCODED_BUFSIZE(GLOME_MAX_TAG_LENGTH)];
-  int rc = login_prompt(config, pamh, error_tag, prompt, input, sizeof(input));
-  free(prompt);
-  message = NULL;
-
+  int rc = login_prompt(config, pamh, error_tag, /*message=*/NULL,
+                        input, sizeof(input));
   if (rc != 0) {
     return rc;
   }
@@ -437,7 +595,6 @@ int login_authenticate(glome_login_config_t* config, pam_handle_t* pamh,
     login_syslog(config, pamh, LOG_DEBUG, "user input: %s", input);
   }
 
-  // Calculate the correct authcode.
   char authcode_encoded[ENCODED_BUFSIZE(sizeof authcode)] = {0};
   if (base64url_encode(authcode, sizeof authcode, (uint8_t*)authcode_encoded,
                        sizeof authcode_encoded) == 0) {
@@ -477,8 +634,6 @@ int login_authenticate(glome_login_config_t* config, pam_handle_t* pamh,
     return failure(EXITCODE_INVALID_INPUT_SIZE, error_tag, "authcode-length");
   }
 
-  // Since we use (relatively) short auth codes, sleep before confirming the
-  // result to prevent bruteforcing.
   if (config->auth_delay_sec) {
     struct timespec delay;
     delay.tv_sec = (time_t)config->auth_delay_sec;
@@ -497,6 +652,13 @@ int login_authenticate(glome_login_config_t* config, pam_handle_t* pamh,
   }
 
   return 0;
+}
+
+int login_authenticate(glome_login_config_t* config, pam_handle_t* pamh,
+                       const char** error_tag) {
+  int r = login_issue_challenge(config, pamh, error_tag);
+  if (r != 0) return r;
+  return login_check_response(config, pamh, error_tag);
 }
 
 int login_run(glome_login_config_t* config, const char** error_tag) {
