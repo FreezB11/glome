@@ -93,6 +93,10 @@ void login_error(glome_login_config_t* config, pam_handle_t* pamh,
                  const char* format, ...);
 void login_syslog(glome_login_config_t* config, pam_handle_t* pamh,
                   int priority, const char* format, ...);
+
+// Displays message to the user and reads their response into input.
+// If message is NULL, skips displaying anything and only reads input.
+// If input is NULL, only displays the message without reading a response.
 int login_prompt(glome_login_config_t* config, pam_handle_t* pamh,
                  const char** error_tag, const char* message, char* input,
                  size_t input_size);
@@ -101,4 +105,16 @@ int login_prompt(glome_login_config_t* config, pam_handle_t* pamh,
 int login_authenticate(glome_login_config_t* config, pam_handle_t* pamh,
                        const char** error_tag);
 
+// Generate ephemeral key, build and print the GLOME challenge.
+// Stops before reading any user input.
+// config->secret_key will be populated after this returns.
+// On error, error_tag is set. Returns 0 on success.
+int login_issue_challenge(glome_login_config_t* config, pam_handle_t* pamh,
+                          const char** error_tag);
+
+// config->secret_key must already be set (restored from pam_set_data).
+// Reads the cached authtok and verifies it against the expected authcode.
+// On error, error_tag is set. Returns 0 on success.
+int login_check_response(glome_login_config_t* config, pam_handle_t* pamh,
+                         const char** error_tag);
 #endif  // LOGIN_LOGIN_H_
